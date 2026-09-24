@@ -125,9 +125,10 @@
     var mbx = ctx.mailbox;
     var item = mbx && mbx.item;
 
-    // office.js loads fine in a plain browser and still fires onReady with a null
-    // host. A live mailbox object is what actually proves we are inside Outlook.
-    var inOutlook = !!mbx;
+    // office.js loads fine in a plain browser and still fires onReady. It even
+    // exposes a hollow Office.context.mailbox there, so a truthy mailbox proves
+    // nothing. info.host is the signal: 'Outlook' in a real host, null outside.
+    var inOutlook = !!(info && info.host);
     var b = document.getElementById('banner');
     b.className = inOutlook ? '' : 'fail';
     document.getElementById('bannerTitle').textContent =
