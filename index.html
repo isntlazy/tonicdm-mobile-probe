@@ -84,6 +84,7 @@
     var c = tr.insertCell();
     c.textContent = v;
     if (cls) c.className = cls;
+    return c;
   }
   function yn(v) { return v ? 'yes' : 'no'; }
   function cls(v) { return v ? 'y' : 'n'; }
@@ -157,11 +158,13 @@
     row('host', 'mailbox hostName', data.mailboxDiagnostics.hostName);
     row('host', 'mailbox hostVersion', data.mailboxDiagnostics.hostVersion);
     data.viewport = viewport();
-    row('host', 'viewport', data.viewport);
+    var viewportCell = row('host', 'viewport', data.viewport);
     row('host', 'devicePixelRatio', String(window.devicePixelRatio || 1));
     window.addEventListener('resize', function () {
+      data.viewport = viewport();
+      viewportCell.textContent = data.viewport;
       document.getElementById('bannerSub').textContent =
-        (info.host || '?') + ' \u00b7 ' + (info.platform || '?') + ' \u00b7 ' + viewport();
+        (info.host || '?') + ' \u00b7 ' + (info.platform || '?') + ' \u00b7 ' + data.viewport;
     });
 
     // Requirement sets
