@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TonicDM mobile probe</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #fff; color: #111;
+  }
+  @media (prefers-color-scheme: dark) { body { background:#1b1b1b; color:#eee; } }
+  #banner {
+    border-radius: 10px; padding: 18px 16px; text-align: center;
+    background: #00bbe8; color: #00303c; margin-bottom: 16px;
+  }
+  #banner b { display:block; font-size: 22px; letter-spacing:-.01em; }
+  #banner span { font-size: 13px; opacity:.8; }
+  #banner.waiting { background:#f0ad4e; color:#3a2600; }
+  #banner.fail { background:#e5534b; color:#fff; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing:.06em;
+       opacity:.55; margin: 22px 0 8px; }
+  table { width:100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 5px 0; vertical-align: top; border-bottom: 1px solid rgba(128,128,128,.22); }
+  td:first-child { opacity:.65; padding-right: 10px; white-space: nowrap; }
+  td:last-child { text-align: right; word-break: break-all; font-variant-numeric: tabular-nums; }
+  .y { color:#1a7f37; font-weight:600; }
+  .n { color:#b3261e; font-weight:600; }
+  @media (prefers-color-scheme: dark) { .y{color:#4ac26b} .n{color:#ff7b72} }
+  .sets { display:flex; flex-wrap:wrap; gap:6px; }
+  .set { font-size:12px; padding:3px 7px; border-radius:5px;
+         background:rgba(128,128,128,.16); }
+  .set.on { background:#1a7f37; color:#fff; }
+  button { -webkit-appearance:none; appearance:none; border:0; border-radius:8px;
+           background:#00bbe8; color:#00303c; font:600 14px/1 inherit;
+           padding:12px 14px; margin:0 8px 8px 0; }
+  pre { background:rgba(128,128,128,.12); padding:10px; border-radius:8px;
+        font-size:11px; white-space:pre-wrap; word-break:break-all; }
+  #log { min-height: 1.4em; font-size:13px; }
+</style>
+</head>
+<body>
+
+<div id="banner" class="waiting">
+  <b id="bannerTitle">Waiting for Office.js…</b>
+  <span id="bannerSub">If this never changes, office.js did not load.</span>
+</div>
+
+<h2>Host</h2>
+<table id="host"></table>
+
+<h2>Mailbox requirement sets</h2>
+<div class="sets" id="sets"></div>
+
+<h2>Current item</h2>
+<table id="item"></table>
+
+<h2>API probes</h2>
+<table id="probes"></table>
+
+<h2>Actions</h2>
+<button id="btnBody">Read body</button>
+<button id="btnBrowser">openBrowserWindow</button>
+<button id="btnNotify">notificationMessage</button>
+<button id="btnClose">closeContainer</button>
+<div id="log"></div>
+
+<h2>Raw (screenshot or copy)</h2>
+<pre id="raw">collecting…</pre>
+
+<script>
+(function () {
+  var data = {};
+
+  function row(tableId, k, v, cls) {
+    var t = document.getElementById(tableId);
+    var tr = t.insertRow();
+    tr.insertCell().textContent = k;
+    var c = tr.insertCell();
+    c.textContent = v;
+    if (cls) c.className = cls;
+  }
+  function yn(v) { return v ? 'yes' : 'no'; }
+  function cls(v) { return v ? 'y' : 'n'; }
+  function log(msg) { document.getElementById('log').textContent = msg; }
+  function safe(fn, fallback) {
+    try { var v = fn(); return v === undefined ? (fallback === undefined ? '—' : fallback) : v; }
+    catch (e) { return 'ERR: ' + e.message; }
+  }
+
+  // Always-available browser facts, even if Office.js never loads.
+  data.viewport = window.innerWidth + ' x ' + window.innerHeight +
+                  ' @' + (window.devicePixelRatio || 1) + 'x';
+  data.userAgent = navigator.userAgent;
+  data.url = location.href;
+  document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+
+  function fail(msg) {
+    var b = document.getElementById('banner');
+    b.className = 'fail';
+    document.getElementById('bannerTitle').textContent = 'Office.js not available';
+    document.getElementById('bannerSub').textContent = msg;
+    row('host', 'viewport', data.viewport);
+    row('host', 'userAgent', data.userAgent);
+    document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+  }
+
+  if (typeof Office === 'undefined' || !Office.onReady) {
+    fail('Loaded as a plain web page, not inside Outlook.');
+    return;
+  }
+
+  Office.onReady(function (info) {
+    var b = document.getElementById('banner');
+    b.className = '';
+    document.getElementById('bannerTitle').textContent = 'Add-in rendered';
+    document.getElementById('bannerSub').textContent =
+      (info.host || '?') + ' · ' + (info.platform || '?');
+
+    var ctx = Office.context || {};
+    var mbx = ctx.mailbox;
+    var item = mbx && mbx.item;
+
+    data.onReady = { host: info.host, platform: info.platform };
+    data.diagnostics = {
+      platform: safe(function () { return ctx.diagnostics.platform; }),
+      host: safe(function () { return ctx.diagnostics.host; }),
+      version: safe(function () { return ctx.diagnostics.version; })
+    };
+    data.mailboxDiagnostics = {
+      hostName: safe(function () { return mbx.diagnostics.hostName; }),
+      hostVersion: safe(function () { return mbx.diagnostics.hostVersion; }),
+      OWAView: safe(function () { return mbx.diagnostics.OWAView; })
+    };
+    data.viewportInPane = window.innerWidth + ' x ' + window.innerHeight;
+
+    row('host', 'Office.host', data.onReady.host);
+    row('host', 'Office.platform', data.onReady.platform);
+    row('host', 'diagnostics.host', data.diagnostics.host);
+    row('host', 'diagnostics.version', data.diagnostics.version);
+    row('host', 'mailbox hostName', data.mailboxDiagnostics.hostName);
+    row('host', 'mailbox hostVersion', data.mailboxDiagnostics.hostVersion);
+    row('host', 'viewport', data.viewport);
+    row('host', 'devicePixelRatio', String(window.devicePixelRatio || 1));
+
+    // Requirement sets
+    var setsEl = document.getElementById('sets');
+    data.requirementSets = {};
+    var versions = ['1.1','1.2','1.3','1.4','1.5','1.6','1.7','1.8','1.9',
+                    '1.10','1.11','1.12','1.13','1.14','1.15'];
+    versions.forEach(function (v) {
+      var ok = false;
+      try { ok = ctx.requirements.isSetSupported('Mailbox', v) === true; } catch (e) {}
+      data.requirementSets['Mailbox ' + v] = ok;
+      var d = document.createElement('div');
+      d.className = 'set' + (ok ? ' on' : '');
+      d.textContent = v;
+      setsEl.appendChild(d);
+    });
+    var naa = false;
+    try { naa = ctx.requirements.isSetSupported('NestedAppAuth', '1.1') === true; } catch (e) {}
+    data.requirementSets['NestedAppAuth 1.1'] = naa;
+    var dn = document.createElement('div');
+    dn.className = 'set' + (naa ? ' on' : '');
+    dn.textContent = 'NAA 1.1';
+    setsEl.appendChild(dn);
+
+    // Current item
+    data.item = {
+      present: !!item,
+      itemType: safe(function () { return item.itemType; }),
+      itemId: safe(function () { return item.itemId; }),
+      internetMessageId: safe(function () { return item.internetMessageId; }),
+      subject: safe(function () { return item.subject; }),
+      from: safe(function () { return item.from && item.from.emailAddress; })
+    };
+    row('item', 'item present', yn(data.item.present), cls(data.item.present));
+    row('item', 'itemType', String(data.item.itemType));
+    row('item', 'subject', String(data.item.subject));
+    row('item', 'internetMessageId', String(data.item.internetMessageId));
+    row('item', 'itemId', String(data.item.itemId));
+    row('item', 'itemId length', String((data.item.itemId || '').length));
+
+    // API probes — the ones the real add-in depends on.
+    var probes = {
+      'body.getAsync':          !!(item && item.body && item.body.getAsync),
+      'body.setAsync (compose)': !!(item && item.body && item.body.setAsync),
+      'item.categories':        !!(item && item.categories),
+      'mailbox.masterCategories': !!(mbx && mbx.masterCategories),
+      'getSelectedItemsAsync':  !!(mbx && mbx.getSelectedItemsAsync),
+      'item.notificationMessages': !!(item && item.notificationMessages),
+      'ui.openBrowserWindow':   !!(ctx.ui && ctx.ui.openBrowserWindow),
+      'ui.displayDialogAsync':  !!(ctx.ui && ctx.ui.displayDialogAsync),
+      'ui.closeContainer':      !!(ctx.ui && ctx.ui.closeContainer),
+      'context.officeTheme':    !!ctx.officeTheme,
+      'mailbox.addHandlerAsync': !!(mbx && mbx.addHandlerAsync),
+      'displayNewMessageFormAsync': !!(mbx && mbx.displayNewMessageFormAsync),
+      'localStorage':           (function () {
+                                   try { localStorage.setItem('_p','1');
+                                         localStorage.removeItem('_p'); return true; }
+                                   catch (e) { return false; }
+                                 })()
+    };
+    data.probes = probes;
+    Object.keys(probes).forEach(function (k) {
+      row('probes', k, yn(probes[k]), cls(probes[k]));
+    });
+
+    document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+
+    // Actions
+    document.getElementById('btnBody').onclick = function () {
+      if (!item || !item.body) return log('no body');
+      log('reading…');
+      item.body.getAsync(Office.CoercionType.Text, function (r) {
+        log(r.status === Office.AsyncResultStatus.Succeeded
+          ? 'body ok (' + (r.value || '').length + ' chars): ' + (r.value || '').slice(0, 80)
+          : 'body failed: ' + (r.error && r.error.message));
+      });
+    };
+    document.getElementById('btnBrowser').onclick = function () {
+      try { ctx.ui.openBrowserWindow('https://www.tonicdm.com/'); log('openBrowserWindow called'); }
+      catch (e) { log('openBrowserWindow threw: ' + e.message); }
+    };
+    document.getElementById('btnNotify').onclick = function () {
+      if (!item || !item.notificationMessages) return log('no notificationMessages');
+      item.notificationMessages.replaceAsync('probe', {
+        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+        message: 'TonicDM probe notification',
+        icon: 'icon32',
+        persistent: false
+      }, function (r) { log('notification: ' + r.status); });
+    };
+    document.getElementById('btnClose').onclick = function () {
+      try { ctx.ui.closeContainer(); } catch (e) { log('closeContainer threw: ' + e.message); }
+    };
+  });
+})();
+</script>
+</body>
+</html>
