@@ -93,9 +93,13 @@
     catch (e) { return 'ERR: ' + e.message; }
   }
 
+  function viewport() {
+    return window.innerWidth + ' x ' + window.innerHeight +
+           ' @' + (window.devicePixelRatio || 1) + 'x';
+  }
+
   // Always-available browser facts, even if Office.js never loads.
-  data.viewport = window.innerWidth + ' x ' + window.innerHeight +
-                  ' @' + (window.devicePixelRatio || 1) + 'x';
+  data.viewport = viewport();
   data.userAgent = navigator.userAgent;
   data.url = location.href;
   document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
@@ -105,6 +109,7 @@
     b.className = 'fail';
     document.getElementById('bannerTitle').textContent = 'Office.js not available';
     document.getElementById('bannerSub').textContent = msg;
+    data.viewport = viewport();
     row('host', 'viewport', data.viewport);
     row('host', 'userAgent', data.userAgent);
     document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
@@ -116,15 +121,20 @@
   }
 
   Office.onReady(function (info) {
-    var b = document.getElementById('banner');
-    b.className = '';
-    document.getElementById('bannerTitle').textContent = 'Add-in rendered';
-    document.getElementById('bannerSub').textContent =
-      (info.host || '?') + ' · ' + (info.platform || '?');
-
     var ctx = Office.context || {};
     var mbx = ctx.mailbox;
     var item = mbx && mbx.item;
+
+    // office.js loads fine in a plain browser and still fires onReady with a null
+    // host. A live mailbox object is what actually proves we are inside Outlook.
+    var inOutlook = !!mbx;
+    var b = document.getElementById('banner');
+    b.className = inOutlook ? '' : 'fail';
+    document.getElementById('bannerTitle').textContent =
+      inOutlook ? 'Add-in rendered' : 'Not running inside Outlook';
+    document.getElementById('bannerSub').textContent = inOutlook
+      ? (info.host || '?') + ' \u00b7 ' + (info.platform || '?') + ' \u00b7 ' + viewport()
+      : 'office.js loaded, but there is no mailbox. Opened as a plain web page?';
 
     data.onReady = { host: info.host, platform: info.platform };
     data.diagnostics = {
@@ -137,7 +147,7 @@
       hostVersion: safe(function () { return mbx.diagnostics.hostVersion; }),
       OWAView: safe(function () { return mbx.diagnostics.OWAView; })
     };
-    data.viewportInPane = window.innerWidth + ' x ' + window.innerHeight;
+
 
     row('host', 'Office.host', data.onReady.host);
     row('host', 'Office.platform', data.onReady.platform);
@@ -145,8 +155,13 @@
     row('host', 'diagnostics.version', data.diagnostics.version);
     row('host', 'mailbox hostName', data.mailboxDiagnostics.hostName);
     row('host', 'mailbox hostVersion', data.mailboxDiagnostics.hostVersion);
+    data.viewport = viewport();
     row('host', 'viewport', data.viewport);
     row('host', 'devicePixelRatio', String(window.devicePixelRatio || 1));
+    window.addEventListener('resize', function () {
+      document.getElementById('bannerSub').textContent =
+        (info.host || '?') + ' \u00b7 ' + (info.platform || '?') + ' \u00b7 ' + viewport();
+    });
 
     // Requirement sets
     var setsEl = document.getElementById('sets');
